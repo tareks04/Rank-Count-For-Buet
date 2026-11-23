@@ -37,6 +37,24 @@ function getInitialMark(): string {
   return '536';
 }
 
+function getReleasesUrl(): string | null {
+  const configuredRepo = import.meta.env.VITE_GITHUB_REPO?.trim();
+  if (configuredRepo) {
+    return `https://github.com/${configuredRepo}/releases/latest`;
+  }
+  if (typeof window !== 'undefined') {
+    const host = window.location.hostname;
+    if (host.endsWith('.github.io')) {
+      const owner = host.replace(/\.github\.io$/, '');
+      const repoSegment = window.location.pathname.split('/').filter(Boolean)[0];
+      if (owner && repoSegment) {
+        return `https://github.com/${owner}/${repoSegment}/releases/latest`;
+      }
+    }
+  }
+  return null;
+}
+
 const VERDICT_STYLES: Record<VerdictTier, string> = {
   safe: 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-300',
   borderline: 'bg-amber-500/12 text-amber-800 dark:text-amber-300',
@@ -531,8 +549,26 @@ export default function App() {
           </p>
         </section>
 
-        <footer className="mt-5 text-center text-xs text-slate-500 dark:text-slate-400">
-          &copy; By Tarek
+        <footer className="mt-5 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-center text-xs text-slate-500 dark:text-slate-400">
+          <span>&copy; By Tarek</span>
+          {(() => {
+            const releasesUrl = getReleasesUrl();
+            if (!releasesUrl) return null;
+            return (
+              <>
+                <span aria-hidden="true">·</span>
+                <a
+                  href={releasesUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-medium text-sky-600 hover:underline dark:text-sky-400"
+                >
+                  <span>Android APK (Releases)</span>
+                  <ExternalLink className="h-3 w-3" aria-hidden="true" />
+                </a>
+              </>
+            );
+          })()}
         </footer>
       </div>
     </div>
