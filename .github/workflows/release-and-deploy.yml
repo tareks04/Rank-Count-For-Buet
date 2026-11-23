@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Tag name to publish a GitHub Release with APK & Web bundle (e.g. v1.0.0)'
+        description: 'Optional tag name for the GitHub Release (defaults to v<package.json version>)'
         required: false
         default: ''
 
@@ -35,10 +35,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Run unit tests
         run: npm test
@@ -47,15 +46,16 @@ jobs:
         run: npm run lint
 
       - name: Build production web bundle
-        env:
-          VITE_GITHUB_REPO: ${{ github.repository }}
         run: npm run build
 
-      - name: Package release archives
+      - name: Resolve release tag & package web archives
         id: meta
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          if [ -n "${{ inputs.release_tag }}" ]; then
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          TAG="v${PKG_VERSION}"
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            TAG="${GITHUB_REF_NAME}"
+          elif [ -n "${{ inputs.release_tag }}" ]; then
             TAG="${{ inputs.release_tag }}"
           fi
           echo "version=${TAG}" >> "$GITHUB_OUTPUT"
@@ -85,7 +85,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
 
       - name: Setup Java 21
         uses: actions/setup-java@v4
@@ -97,14 +96,14 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install dependencies
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Build web bundle for Android
-        env:
-          VITE_GITHUB_REPO: ${{ github.repository }}
         run: npm run build
 
       - name: Generate and sync Capacitor Android project
+        env:
+          CI: 'true'
         run: |
           if [ ! -d "android" ]; then
             npx cap add android
@@ -112,7 +111,6 @@ jobs:
           npx cap sync android
 
       - name: Build Android APK
-        id: apk
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -122,6 +120,7 @@ jobs:
           TAG="${{ needs.verify-and-build.outputs.version }}"
           mkdir -p apk-artifacts
           OUT_APK="apk-artifacts/pcm-nationwide-rank-estimator-${TAG}.apk"
+          chmod +x android/gradlew
 
           if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
             echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/release.keystore
@@ -148,6 +147,7 @@ jobs:
 
   deploy-pages:
     needs: verify-and-build
+    continue-on-error: true
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -158,8 +158,7 @@ jobs:
         uses: actions/deploy-pages@v4
 
   publish-release:
-    needs: [verify-and-build, build-android-apk, deploy-pages]
-    if: startsWith(github.ref, 'refs/tags/v') || inputs.release_tag != ''
+    needs: [verify-and-build, build-android-apk]
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -177,14 +176,14 @@ jobs:
           name: android-apk
           path: release-artifacts
 
-      - name: Create GitHub Release with APK
+      - name: Create or Update GitHub Release with APK
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.release_tag || github.ref_name }}
-          name: PCM Nationwide Rank Estimator ${{ inputs.release_tag || github.ref_name }}
+          tag_name: ${{ needs.verify-and-build.outputs.version }}
+          name: PCM Nationwide Rank Estimator ${{ needs.verify-and-build.outputs.version }}
           body: |
             ### Downloads
-            - **Android App (`.apk`)**: Download `pcm-nationwide-rank-estimator-${{ needs.verify-and-build.outputs.version }}.apk` from the Assets below to install directly on Android.
+            - **Android App (`.apk`)**: Download `pcm-nationwide-rank-estimator-${{ needs.verify-and-build.outputs.version }}.apk` from **Assets** below to install on Android.
             - **Web Static Bundle**: `.tar.gz` and `.zip` production builds of `dist/`.
           generate_release_notes: true
           draft: false
