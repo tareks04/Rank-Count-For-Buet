@@ -37,7 +37,7 @@ jobs:
           node-version: 22
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm install --legacy-peer-deps --no-audit --no-fund
 
       - name: Run unit tests
         run: npm test
@@ -96,7 +96,7 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install dependencies
-        run: npm install --no-audit --no-fund
+        run: npm install --legacy-peer-deps --no-audit --no-fund
 
       - name: Build web bundle for Android
         run: npm run build
@@ -106,9 +106,9 @@ jobs:
           CI: 'true'
         run: |
           if [ ! -d "android" ]; then
-            npx cap add android
+            npx --no-install cap add android
           fi
-          npx cap sync android
+          npx --no-install cap sync android
 
       - name: Build Android APK
         env:
