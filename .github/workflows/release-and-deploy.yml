@@ -92,8 +92,18 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Configure Android SDK & Licenses
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=${SDK_ROOT}" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=${SDK_ROOT}" >> "$GITHUB_ENV"
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -name sdkmanager -type f 2>/dev/null | sort -V | tail -n 1)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager not found under $SDK_ROOT/cmdline-tools"
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
+          "$SDKMANAGER" "platforms;android-36" "build-tools;36.0.0" "platform-tools"
 
       - name: Install dependencies
         run: npm install --legacy-peer-deps --no-audit --no-fund
@@ -124,7 +134,7 @@ jobs:
 
           if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
             echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android/release.keystore
-            (cd android && ./gradlew assembleRelease)
+            (cd android && ./gradlew assembleRelease --no-daemon)
             APKSIGNER="$(find "${ANDROID_HOME:-$ANDROID_SDK_ROOT}/build-tools" -name apksigner | sort -V | tail -n 1)"
             "$APKSIGNER" sign \
               --ks android/release.keystore \
@@ -135,7 +145,7 @@ jobs:
               android/app/build/outputs/apk/release/app-release-unsigned.apk
             rm -f android/release.keystore
           else
-            (cd android && ./gradlew assembleDebug)
+            (cd android && ./gradlew assembleDebug --no-daemon)
             cp android/app/build/outputs/apk/debug/app-debug.apk "$OUT_APK"
           fi
 
@@ -153,6 +163,10 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
